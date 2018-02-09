@@ -8,71 +8,36 @@
 
 //for LED status
 #include <Ticker.h>
-Ticker ticker;
-
 #include <ArduinoJson.h> //https://github.com/bblanchon/ArduinoJson
+#include <BlynkSimpleEsp8266.h>
+#include <SimpleTimer.h>
+
+#define PIN_OUT D1
+#define PWM_PERIOD 20
+#define MEASURE_DELTA 32
+#define MEASURE_DELTA_PERIOD 100
+
+Ticker ticker;
+Ticker pwmTicker;
 
 char blynk_token[34] = "BLYNK_TOKEN";
 
 bool shouldSaveConfig = false; //flag for saving data
 
-#include <BlynkSimpleEsp8266.h>
-#include <SimpleTimer.h>
 SimpleTimer timer;
 
-#define PIN_UP D1
-#define PIN_DOWN D2
+int lastPwm = 0;
 
-#define DELAY_IMPULSE() delayMicroseconds(1)
-// This function will be called every time Slider Widget
-// in Blynk app writes values to the Virtual Pin V1
-BLYNK_WRITE(V1)
-{
-    int pinValue = param.asInt(); // assigning incoming value from pin V1 to a variable
-    Serial.print("v1:");
-    Serial.println(pinValue);
-    if (pinValue == 1)
-    {
-        digitalWrite(PIN_UP, 1);
-        DELAY_IMPULSE();
-        digitalWrite(PIN_UP, 0);
-    }
-}
-
-BLYNK_WRITE(V2)
-{
-    int pinValue = param.asInt(); // assigning incoming value from pin V1 to a variable
-    Serial.print("v2:");
-    Serial.println(pinValue);
-    if (pinValue == 1)
-    {
-        digitalWrite(PIN_DOWN, 1);
-        DELAY_IMPULSE();
-        digitalWrite(PIN_DOWN, 0);
-    }
-}
+bool wifiSetted = false;
 
 BLYNK_WRITE(V3)
 {
-    int pinValue = param.asInt(); // assigning incoming value from pin V1 to a variable
+    int pwmVal = param.asInt(); // assigning incoming value from pin V1 to a variable
     Serial.print("v3:");
-    Serial.println(pinValue);
+    Serial.println(pwmVal);
 
-    for (int i = 0; i <= 15; i++)
-    {
-        digitalWrite(PIN_DOWN, 1);
-        DELAY_IMPULSE();
-        digitalWrite(PIN_DOWN, 0);
-        DELAY_IMPULSE();
-    }
-
-    for (int i = 0; i <= pinValue && pinValue > 0; i++)
-    {
-        digitalWrite(PIN_UP, 1);
-        DELAY_IMPULSE();
-        digitalWrite(PIN_UP, 0);
-        DELAY_IMPULSE();
-    }
+    analogWrite(PIN_OUT, pwmVal);
+    wifiSetted = true;
 }
 
 void tick()
@@ -80,6 +45,29 @@ void tick()
     //toggle state
     int state = digitalRead(BUILTIN_LED); // get the current state of GPIO1 pin
     digitalWrite(BUILTIN_LED, !state);    // set pin to the opposite state
+}
+
+void pwmControlCallback()
+{
+    if (!wifiSetted)
+    {
+        int pwmVal = analogRead(A0);
+        analogWrite(PIN_OUT, pwmVal);
+    }
+}
+
+void deltaMeasureCallback()
+{
+    int pwmVal = analogRead(A0);
+
+    if (abs(pwmVal - lastPwm) > MEASURE_DELTA)
+    {
+        wifiSetted = false;
+    }
+    lastPwm = pwmVal;
+
+    Serial.print("measured:");
+    Serial.println(pwmVal);
 }
 
 void saveConfigCallback()
@@ -91,9 +79,9 @@ void saveConfigCallback()
 
 void setup()
 {
-
-    pinMode(PIN_DOWN, OUTPUT);
-    pinMode(PIN_UP, OUTPUT);
+    pinMode(PIN_OUT, OUTPUT);
+    // pinMode(PIN_DOWN, OUTPUT);
+    // pinMode(PIN_UP, OUTPUT);
 
     Serial.begin(9600);
     Serial.println();
@@ -103,6 +91,8 @@ void setup()
     // start ticker with 0.5 because we start in AP mode and try to connect
     ticker.attach(0.6, tick);
 
+    pwmTicker.attach_ms(PWM_PERIOD, pwmControlCallback);
+    pwmTicker.attach_ms(MEASURE_DELTA_PERIOD, deltaMeasureCallback);
     //SPIFFS.format();    //clean FS, for testing
     Serial.println("Mounting FS..."); //read configuration from FS json
 
