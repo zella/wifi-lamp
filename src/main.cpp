@@ -109,6 +109,10 @@ void setup()
 
     //set led pin as output
     pinMode(BUILTIN_LED, OUTPUT);
+    pinMode(OUT_PIN1, OUTPUT);
+    pinMode(OUT_PIN2, OUTPUT);
+    pinMode(OUT_PIN3, OUTPUT);
+    pinMode(OUT_PIN4, OUTPUT);
     // start ticker with 0.5 because we start in AP mode and try to connect
     ticker.attach(0.6, tick);
 
