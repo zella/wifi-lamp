@@ -12,13 +12,20 @@
 #include <BlynkSimpleEsp8266.h>
 #include <SimpleTimer.h>
 
-#define PIN_OUT D1
-#define PWM_PERIOD 20
-#define MEASURE_DELTA 32
-#define MEASURE_DELTA_PERIOD 100
+#include "ESPRotary.h"
+
+#define MIN_VAL 0
+#define MAX_VAL 15
+
+#define ROTARY_PIN1 D1
+#define ROTARY_PIN2 D2
+
+#define OUT_PIN1 D5
+#define OUT_PIN2 D6
+#define OUT_PIN3 D7
+#define OUT_PIN4 D8
 
 Ticker ticker;
-Ticker pwmTicker;
 
 char blynk_token[34] = "BLYNK_TOKEN";
 
@@ -26,18 +33,55 @@ bool shouldSaveConfig = false; //flag for saving data
 
 SimpleTimer timer;
 
-int lastPwm = 0;
+ESPRotary r = ESPRotary(ROTARY_PIN1, ROTARY_PIN2);
 
-bool wifiSetted = false;
+int lampBright = 0;
+
+void setHardwareVal()
+{
+    digitalWrite(OUT_PIN1, HIGH && (lampBright & B00001000));
+    digitalWrite(OUT_PIN2, HIGH && (lampBright & B00000100));
+    digitalWrite(OUT_PIN3, HIGH && (lampBright & B00000010));
+    digitalWrite(OUT_PIN4, HIGH && (lampBright & B00000001));
+}
 
 BLYNK_WRITE(V3)
 {
-    int pwmVal = param.asInt(); // assigning incoming value from pin V1 to a variable
-    Serial.print("v3:");
-    Serial.println(pwmVal);
+    lampBright = param.asInt(); // 0 .. 15
+    Serial.print("From wifi:");
+    Serial.println(lampBright);
 
-    analogWrite(PIN_OUT, pwmVal);
-    wifiSetted = true;
+    setHardwareVal();
+}
+
+void decLamp()
+{
+    if (lampBright > MIN_VAL)
+    {
+        lampBright = lampBright - 1;
+        setHardwareVal();
+    }
+}
+
+void incLamp()
+{
+    if (lampBright < MAX_VAL)
+    {
+        lampBright = lampBright + 1;
+        setHardwareVal();
+    }
+}
+
+void leftDirection(ESPRotary &r)
+{
+    Serial.println(r.directionToString(r.getDirection()));
+    decLamp();
+}
+
+void rightDirection(ESPRotary &r)
+{
+    Serial.println(r.directionToString(r.getDirection()));
+    incLamp();
 }
 
 void tick()
@@ -45,29 +89,6 @@ void tick()
     //toggle state
     int state = digitalRead(BUILTIN_LED); // get the current state of GPIO1 pin
     digitalWrite(BUILTIN_LED, !state);    // set pin to the opposite state
-}
-
-void pwmControlCallback()
-{
-    if (!wifiSetted)
-    {
-        int pwmVal = analogRead(A0);
-        analogWrite(PIN_OUT, pwmVal);
-    }
-}
-
-void deltaMeasureCallback()
-{
-    int pwmVal = analogRead(A0);
-
-    if (abs(pwmVal - lastPwm) > MEASURE_DELTA)
-    {
-        wifiSetted = false;
-    }
-    lastPwm = pwmVal;
-
-    Serial.print("measured:");
-    Serial.println(pwmVal);
 }
 
 void saveConfigCallback()
@@ -79,20 +100,18 @@ void saveConfigCallback()
 
 void setup()
 {
-    pinMode(PIN_OUT, OUTPUT);
-    // pinMode(PIN_DOWN, OUTPUT);
-    // pinMode(PIN_UP, OUTPUT);
 
     Serial.begin(9600);
     Serial.println();
+
+    r.setLeftRotationHandler(leftDirection);
+    r.setRightRotationHandler(rightDirection);
 
     //set led pin as output
     pinMode(BUILTIN_LED, OUTPUT);
     // start ticker with 0.5 because we start in AP mode and try to connect
     ticker.attach(0.6, tick);
 
-    pwmTicker.attach_ms(PWM_PERIOD, pwmControlCallback);
-    pwmTicker.attach_ms(MEASURE_DELTA_PERIOD, deltaMeasureCallback);
     //SPIFFS.format();    //clean FS, for testing
     Serial.println("Mounting FS..."); //read configuration from FS json
 
@@ -210,4 +229,5 @@ void loop()
 {
     Blynk.run(); // Initiates Blynk
     timer.run(); // Initiates SimpleTimer
+    r.loop();
 }
