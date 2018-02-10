@@ -12,8 +12,6 @@
 #include <BlynkSimpleEsp8266.h>
 #include <SimpleTimer.h>
 
-#include "ESPRotary.h"
-
 #define MIN_VAL 0
 #define MAX_VAL 15
 
@@ -26,6 +24,7 @@
 #define OUT_PIN4 D8
 
 Ticker ticker;
+Ticker encTicker;
 
 char blynk_token[34] = "BLYNK_TOKEN";
 
@@ -33,9 +32,16 @@ bool shouldSaveConfig = false; //flag for saving data
 
 SimpleTimer timer;
 
-ESPRotary r = ESPRotary(ROTARY_PIN1, ROTARY_PIN2);
+byte lampBright = 0;
 
-int lampBright = 0;
+// void printBits(byte myByte){
+//  for(byte mask = 0x80; mask; mask >>= 1){
+//    if(mask  & myByte)
+//        Serial.print('1');
+//    else
+//        Serial.print('0');
+//  }
+// }
 
 void setHardwareVal()
 {
@@ -43,6 +49,12 @@ void setHardwareVal()
     digitalWrite(OUT_PIN2, HIGH && (lampBright & B00000100));
     digitalWrite(OUT_PIN3, HIGH && (lampBright & B00000010));
     digitalWrite(OUT_PIN4, HIGH && (lampBright & B00000001));
+
+    if(Blynk.connected()){
+        Blynk.virtualWrite(V3, lampBright);
+    }
+
+    Serial.println(lampBright);
 }
 
 BLYNK_WRITE(V3)
@@ -72,16 +84,100 @@ void incLamp()
     }
 }
 
-void leftDirection(ESPRotary &r)
-{
-    Serial.println(r.directionToString(r.getDirection()));
-    decLamp();
-}
+byte lastState = 0;
+byte steps = 0;
+int dir = 0;
+byte AState = 0;
+byte BState = 0;
+byte State = 0;
 
-void rightDirection(ESPRotary &r)
+void encF()
 {
-    Serial.println(r.directionToString(r.getDirection()));
-    incLamp();
+    // read the input pin:
+    AState = digitalRead(ROTARY_PIN1);
+    BState = digitalRead(ROTARY_PIN2) << 1;
+    State = AState | BState;
+
+    bool isChanged = false;
+
+    if (lastState != State)
+    {
+        switch (State)
+        {
+        case 0:
+            if (lastState == 2)
+            {
+                steps++;
+                dir = 1;
+                isChanged = true;
+            }
+            else if (lastState == 1)
+            {
+                steps--;
+                dir = -1;
+                isChanged = true;
+            }
+            break;
+        case 1:
+            if (lastState == 0)
+            {
+                steps++;
+                dir = 1;
+                isChanged = true;
+            }
+            else if (lastState == 3)
+            {
+                steps--;
+                dir = -1;
+                isChanged = true;
+            }
+            break;
+        case 2:
+            if (lastState == 3)
+            {
+                steps++;
+                dir = 1;
+                isChanged = true;
+            }
+            else if (lastState == 0)
+            {
+                steps--;
+                dir = -1;
+                isChanged = true;
+            }
+            break;
+        case 3:
+            if (lastState == 1)
+            {
+                steps++;
+                dir = 1;
+                isChanged = true;
+            }
+            else if (lastState == 2)
+            {
+                steps--;
+                dir = -1;
+                isChanged = true;
+            }
+            break;
+        }
+    }
+
+    lastState = State;
+    if (isChanged)
+    {
+        // Serial.print(dir);
+        // Serial.print("\t");
+        // Serial.println(steps);
+        if (dir == -1)
+        {
+            decLamp();
+        }
+        else
+        {
+            incLamp();
+        }
+    }
 }
 
 void tick()
@@ -89,6 +185,12 @@ void tick()
     //toggle state
     int state = digitalRead(BUILTIN_LED); // get the current state of GPIO1 pin
     digitalWrite(BUILTIN_LED, !state);    // set pin to the opposite state
+}
+
+void encTick()
+{
+    // r.loop();
+    encF();
 }
 
 void saveConfigCallback()
@@ -104,17 +206,19 @@ void setup()
     Serial.begin(9600);
     Serial.println();
 
-    r.setLeftRotationHandler(leftDirection);
-    r.setRightRotationHandler(rightDirection);
-
     //set led pin as output
     pinMode(BUILTIN_LED, OUTPUT);
     pinMode(OUT_PIN1, OUTPUT);
     pinMode(OUT_PIN2, OUTPUT);
     pinMode(OUT_PIN3, OUTPUT);
     pinMode(OUT_PIN4, OUTPUT);
+    pinMode(ROTARY_PIN1, INPUT_PULLUP);
+    pinMode(ROTARY_PIN2, INPUT_PULLUP);
+
+    setHardwareVal();
     // start ticker with 0.5 because we start in AP mode and try to connect
     ticker.attach(0.6, tick);
+    encTicker.attach_ms(10, encTick);
 
     //SPIFFS.format();    //clean FS, for testing
     Serial.println("Mounting FS..."); //read configuration from FS json
@@ -188,7 +292,7 @@ void setup()
 
     //fetches ssid and pass and tries to connect, if it does not connect it starts an access point with the specified name
     //and goes into a blocking loop awaiting configuration
-    if (!wifiManager.autoConnect("CentralHeatingAP", "MY123PWD"))
+    if (!wifiManager.autoConnect("CentralHeatingAP", "testtest"))
     {
         Serial.println("Failed to connect and hit timeout");
         delay(3000);
@@ -233,5 +337,5 @@ void loop()
 {
     Blynk.run(); // Initiates Blynk
     timer.run(); // Initiates SimpleTimer
-    r.loop();
+                 //r.loop(); using ticker
 }
